@@ -1,14 +1,11 @@
-import numpy
+import numpy as np
 from keras.models import Model
 from keras.layers import Input, LSTM, Embedding, Dense
 from keras.optimizers import Adam
 
-#original model link: https://github.com/priyadarshiguha/English-to-Hindi-NMT-Model-Using-RNN
-
-
-data = open('/Volumes/Whale/for MAC/Internship(code)/Github Model/eng_to_hin.txt', 'r', encoding='utf8', errors='ignore').read()
+data = open(r"C:\Users\admin\CCPS Research\virtual_test\piyush\eng_to_hin.txt", 'r', encoding='utf8', errors='ignore').read()
 lines = data.split('\n')
-lines = lines[:100]
+lines = lines[:]
 
 english = [l.split('\t')[0] for l in lines]
 hindi = [l.split('\t')[1] for l in lines]
@@ -17,8 +14,11 @@ hindi = ['<s> '+h+' <e>' for h in hindi]
 english_vocab = sorted(list(set([w for e in english for w in e.split()])))
 hindi_vocab = sorted(list(set([w for h in hindi for w in h.split()])))
 
-english_vocab_size = len(english_vocab)
-hindi_vocab_size = len(hindi_vocab)
+english_vocab_size = min(8000, len(english_vocab)) #vocab size
+hindi_vocab_size = min(8000, len(hindi_vocab))
+
+english_vocab = english_vocab[:english_vocab_size]
+hindi_vocab = hindi_vocab[:hindi_vocab_size]
 
 max_english_len = max([len(e.split()) for e in english])
 max_hindi_len = max([len(h.split()) for h in hindi])
@@ -28,16 +28,18 @@ hindi_w_to_i = {w: i for i, w in enumerate(hindi_vocab)}
 english_i_to_w = {i: w for i, w in enumerate(english_vocab)}
 hindi_i_to_w = {i: w for i, w in enumerate(hindi_vocab)}
 
-encoder_input_data = numpy.zeros((len(english), max_english_len))
-decoder_input_data = numpy.zeros((len(hindi), max_hindi_len))
-decoder_target_data = numpy.zeros((len(hindi), max_hindi_len, hindi_vocab_size))
+encoder_input_data = np.zeros((len(english), max_english_len), dtype='float32') #specifying datatype 
+decoder_input_data = np.zeros((len(hindi), max_hindi_len), dtype='float32')
+decoder_target_data = np.zeros((len(hindi), max_hindi_len, hindi_vocab_size), dtype='float32')
+
 for i in range(len(english)):
     for j in range(len(english[i].split())):
-        encoder_input_data[i, j] = english_w_to_i[english[i].split()[j]]
+        encoder_input_data[i, j] = english_w_to_i.get(english[i].split()[j], 0)
 for i in range(len(hindi)):
     for j in range(len(hindi[i].split())):
-        decoder_input_data[i, j] = hindi_w_to_i[hindi[i].split()[j]]
-        decoder_target_data[i, j, hindi_w_to_i[hindi[i].split()[j]]] = 1.
+        decoder_input_data[i, j] = hindi_w_to_i.get(hindi[i].split()[j], 0)
+        if j > 0:
+            decoder_target_data[i, j - 1, hindi_w_to_i.get(hindi[i].split()[j], 0)] = 1.0
 
 units = 256
 epochs = 100
@@ -85,14 +87,11 @@ decoder_model = Model([decoder_inputs]+decoder_state_inputs, [decoder_output_2]+
 
 
 def translate(input_seq):
-    # Reshape input_seq to include batch dimension
+    #batch dimension
     input_seq = input_seq.reshape(1, -1)
+    states = encoder_model.predict(input_seq) #encoder states
     
-    # Get the encoder states
-    states = encoder_model.predict(input_seq)
-    
-    # Prepare the target sequence (input for the decoder)
-    target_seq = numpy.zeros((1, 1))
+    target_seq = np.zeros((1, 1)) #input for decoder
     target_seq[0, 0] = hindi_w_to_i['<s>']
     
     stop = False
@@ -100,23 +99,20 @@ def translate(input_seq):
     
     while not stop:
         output, h, c = decoder_model.predict([target_seq] + states)
-        index = numpy.argmax(output[0, -1, :])
-        char = hindi_i_to_w[index]
+        index = np.argmax(output[0, -1, :])
+        char = hindi_i_to_w.get(index, '')
         target_sentence += ' ' + char
         
         if char == '<e>' or len(target_sentence.split()) > max_hindi_len:
             stop = True
         
-        # Update the target sequence
-        target_seq = numpy.zeros((1, 1))
-        target_seq[0, 0] = index
+        target_seq = np.zeros((1, 1)) 
+        target_seq[0, 0] = index #updating target sequence
         
-        # Update states
-        states = [h, c]
+        states = [h, c] #updating states
     
     return target_sentence
 
-# Run the translation function for each input
 for i in range(len(english)):
     print("-----------------------------------------------------------------------------------------------")
     print('English Sentence: ', english[i])
@@ -128,5 +124,3 @@ for i in range(len(english)):
     input_seq2 = encoder_input_data[i, :].reshape(1, -1)
     predicted_sentence2 = translate(input_seq2)
     print('Predicted Hindi Sentence2: ', predicted_sentence2)
-    
-
